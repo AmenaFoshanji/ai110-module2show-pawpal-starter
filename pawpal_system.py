@@ -238,6 +238,21 @@ class Scheduler:
                 results.append(task)
         return results
 
+    def find_conflicts(self, tasks: list[Task]) -> list[list[Task]]:
+        """Return groups of tasks that are pinned to the same preferred_time.
+
+        Two tasks asking for the same clock time cannot both happen then, so they
+        are reported as a conflict. Untimed tasks (preferred_time is None) float
+        freely and never conflict, so they are ignored. Each returned group has
+        two or more tasks; an empty list means there are no time conflicts.
+        """
+        by_time: dict[time, list[Task]] = {}
+        for task in tasks:
+            if task.preferred_time is None:
+                continue
+            by_time.setdefault(task.preferred_time, []).append(task)
+        return [group for group in by_time.values() if len(group) > 1]
+
     def fits(self, task: Task, remaining_minutes: int) -> bool:
         """Return True if the task fits within the remaining available time."""
         return task.duration_minutes <= remaining_minutes

@@ -70,19 +70,49 @@ task that no longer fits is skipped rather than silently dropped.
 
 ## 🧪 Testing PawPal+
 
+Run the full test suite from the project root:
+
 ```bash
-# Run the full test suite:
-pytest
-
-# Run with coverage:
-pytest --cov
+python -m pytest
 ```
 
-Sample test output:
+### What the tests cover
+
+The suite in `tests/test_pawpal.py` (7 tests) covers the most important behaviors of the
+logic layer:
+
+- **Task completion** — `mark_complete()` flips a task's status to done.
+- **Task management** — adding a task to a pet increases that pet's task count.
+- **Recurrence logic** — completing a `DAILY`/`WEEKLY` task auto-creates the next occurrence,
+  while a one-off (`NONE`) task does not.
+- **Sorting correctness** — `sort_by_time()` returns tasks in chronological order, with
+  untimed tasks placed last.
+- **Conflict detection** — `find_conflicts()` flags tasks pinned to the same time, and does
+  not flag unique or untimed tasks.
+
+### Sample test output
 
 ```
-# Paste your pytest output here
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\amena\Downloads\ai110-module2show-pawpal-starter-main\ai110-module2show-pawpal-starter-main
+plugins: anyio-4.13.0
+collected 7 items
+
+tests\test_pawpal.py .......                                             [100%]
+
+============================== 7 passed in 0.01s ==============================
 ```
+
+### Confidence level
+
+**★★★☆☆ (3 / 5).** All 7 tests pass and the core building blocks — completion, recurrence,
+sorting, and conflict detection — are each covered by a focused test. Confidence is held at 3
+rather than higher because the suite tests these behaviors mostly in isolation and does not yet
+cover important edge cases: exact-fit time budgets in `build_plan()`, greedy packing continuing
+after a skip, re-completing an already-completed recurring task (which currently spawns a
+duplicate), and conflict *resolution* (the scheduler can flag duplicate times but does not yet
+honor `preferred_time` when placing tasks). Adding those would raise confidence toward 5.
 
 ## 📐 Smarter Scheduling
 
