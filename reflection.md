@@ -234,13 +234,60 @@ redesigning the data model.
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+I used an AI coding assistant across the whole project — brainstorming the UML, generating
+class skeletons, implementing methods, writing tests, and drafting documentation.
+
+*Most effective features for building the scheduler:*
+
+- **Multi-file agent mode.** Being able to read and edit several files in one step was the
+  biggest help. When I added recurring tasks, the change touched `Task`, `Pet`, the UML, the
+  reflection, and the tests at once; the assistant could keep them all consistent instead of me
+  hand-syncing each file.
+- **Generating skeletons from the UML.** I had it turn my Mermaid diagram into dataclass stubs
+  (attributes and empty methods), which gave me a structure to review before any logic existed.
+- **Running code and tests in the terminal.** After each method it would run `main.py` and
+  `pytest` and show the output, so I could confirm behavior immediately rather than guessing.
+- **Targeted review prompts.** The most useful prompts were narrow and critical — for example,
+  "review this skeleton for missing relationships or logic bottlenecks" and "how could this
+  algorithm be simplified for readability or performance?" Open-ended "build me the app" prompts
+  were far less useful than small, scoped asks like "add a `sort_by_time` method that handles a
+  missing time."
+
+*Using separate chat sessions per phase.* I kept different phases in different sessions —
+design/UML, implementation, and testing. This kept each conversation focused on one goal, so
+the assistant's context wasn't cluttered with unrelated detail and I could go back to, say, the
+design session without scrolling past hundreds of lines of test output. It also mirrored the
+build order in the README and made it easy to pick up where I left off.
+
+*Being the "lead architect."* The clearest lesson was that the AI is a fast, capable
+implementer, but I had to stay the decision-maker. It could produce three plausible options in
+seconds, but choosing the class boundaries, naming, what to defer, and which tradeoffs were
+acceptable was my job. The quality of the result tracked the quality of my direction and my
+willingness to push back — the AI rarely volunteered "this is redundant" or "you don't need
+this yet"; I had to notice that and steer.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+The clearest moment I did not accept a suggestion as-is was the `build_plan` scheduling loop.
+When I asked how it could be simplified, the assistant offered a "more Pythonic" version using
+`itertools.accumulate` and a list comprehension. It was more compact, but it hid the running
+time/budget bookkeeping and the items-vs-skipped split behind a prefix-sum trick that was harder
+to read and no faster (the cost is dominated by the sort either way). I kept the explicit loop
+because readability mattered more than cleverness here.
+
+I also modified suggestions to keep the design clean: I removed an AI-generated
+`priority_weight()` method that just duplicated the orderable `Priority` enum, and I replaced a
+`recurring: bool` flag with a `Recurrence` enum so it could express daily vs. weekly. And I
+reversed one of my own earlier calls — I had deferred a `Task -> Pet` back-reference to avoid
+circular references, then added it deliberately when recurrence needed it, using
+`repr=False, compare=False` to neutralize the recursion risk.
+
+To verify what the AI suggested, I did not take "it runs" as proof. I ran `main.py` and read the
+actual schedule output, wrote `pytest` tests for the behaviors that mattered (sorting order,
+recurrence spawning, conflict detection, completion), and used small throwaway scripts to check
+edge cases like `None` `preferred_time` values. Where the AI's claims outran the code — such as
+a commit message mentioning "conflict detection" before resolution existed — I made sure the
+docs described what the code *actually* does rather than what it aspired to.
 
 ---
 

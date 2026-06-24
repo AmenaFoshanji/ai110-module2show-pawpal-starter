@@ -1,3 +1,5 @@
+from datetime import time
+
 import streamlit as st
 
 from pawpal_system import Owner, Pet, Priority, Scheduler, Task
@@ -18,6 +20,9 @@ if "owner" not in st.session_state:
 
 # Convenient handle for the rest of the script to read/modify.
 owner = st.session_state.owner
+
+# The scheduler is stateless, so one shared instance is fine for the whole page.
+scheduler = Scheduler()
 
 st.title("🐾 PawPal+")
 
@@ -104,6 +109,11 @@ else:
             duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
         with col2:
             priority_label = st.selectbox("Priority", ["low", "medium", "high"], index=2)
+        col3, col4 = st.columns(2)
+        with col3:
+            pin_time = st.checkbox("Pin to a specific time?")
+        with col4:
+            chosen_time = st.time_input("Preferred time", value=time(8, 0))
         if st.form_submit_button("Add task"):
             pet = next(p for p in owner.pets if p.name == pet_name)
             pet.add_task(
@@ -111,25 +121,41 @@ else:
                     title=task_title,
                     duration_minutes=int(duration),
                     priority=Priority[priority_label.upper()],
+                    preferred_time=chosen_time if pin_time else None,
                 )
             )
             st.success(f"Added '{task_title}' for {pet.name}.")
 
-    # Show each pet's current tasks, read live from the Owner object.
-    for pet in owner.pets:
-        if pet.tasks:
-            st.markdown(f"**{pet.name}'s tasks**")
-            st.table(
-                [
-                    {
-                        "Task": t.title,
-                        "Duration (min)": t.duration_minutes,
-                        "Priority": t.priority.name.lower(),
-                        "Done": t.completed,
-                    }
-                    for t in pet.tasks
-                ]
-            )
+    # Conflict detection: warn about tasks pinned to the same clock time.
+    for group in scheduler.find_conflicts(owner.list_tasks()):
+        slot = group[0].preferred_time.strftime("%H:%M")
+        names = ", ".join(f"{t.pet.name}: {t.title}" for t in group)
+        st.warning(f"⚠️ Time conflict at {slot} — {names}")
+
+    # Filter control: show all tasks, only pending, or only completed.
+    view = st.radio("Show", ["All", "Pending", "Completed"], horizontal=True)
+    completed_filter = {"All": None, "Pending": False, "Completed": True}[view]
+    tasks = scheduler.filter_tasks(owner, completed=completed_filter)
+
+    # Sort the filtered tasks into chronological order for display.
+    tasks = scheduler.sort_by_time(tasks)
+
+    if tasks:
+        st.table(
+            [
+                {
+                    "Time": t.preferred_time.strftime("%H:%M") if t.preferred_time else "—",
+                    "Pet": t.pet.name if t.pet else "—",
+                    "Task": t.title,
+                    "Duration (min)": t.duration_minutes,
+                    "Priority": t.priority.name.lower(),
+                    "Done": "✓" if t.completed else "",
+                }
+                for t in tasks
+            ]
+        )
+    else:
+        st.info(f"No {view.lower()} tasks to show.")
 
 st.divider()
 
@@ -138,5 +164,31 @@ if st.button("Generate schedule"):
     if not owner.list_tasks():
         st.warning("No tasks to schedule yet. Add a pet and some tasks first.")
     else:
-        plan = Scheduler().build_plan(owner)
-        st.code(plan.explain())
+        plan = scheduler.build_plan(owner)
+        st.success(
+            f"Scheduled {len(plan.items)} task(s) — {plan.total_minutes} of "
+            f"{owner.available_minutes} available minutes used."
+        )
+        if plan.items:
+            st.table(
+                [
+                    {
+                        "Start": item.start_time.strftime("%H:%M"),
+                        "End": item.end_time.strftime("%H:%M"),
+                        "Pet": item.task.pet.name if item.task.pet else "—",
+                        "Task": item.task.title,
+                        "Duration (min)": item.task.duration_minutes,
+                        "Priority": item.task.priority.name.lower(),
+                    }
+                    for item in plan.items
+                ]
+            )
+        if plan.skipped:
+            skipped = ", ".join(
+                f"{t.title} ({t.duration_minutes} min)" for t in plan.skipped
+            )
+            st.warning(f"Skipped — not enough time: {skipped}")
+
+        # The plan's own plain-language reasoning, tucked away for the curious.
+        with st.expander("Why this plan?"):
+            st.code(plan.explain())

@@ -22,6 +22,34 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## ✨ Features
+
+All logic lives in `pawpal_system.py`; the Streamlit UI in `app.py` is a thin layer over it.
+
+- **Multi-pet care tracking** — one owner can have many pets, each with its own task list
+  (`Owner`, `Pet`, `Task`).
+- **Priority-aware daily planning** — `Scheduler.build_plan()` selects and orders tasks by
+  priority (highest first), then shortest duration, packing them back-to-back from the owner's
+  preferred start time.
+- **Time-budget enforcement** — `Scheduler.fits()` keeps the plan within the owner's
+  `available_minutes`; tasks that don't fit are reported in `DailyPlan.skipped` instead of being
+  dropped silently.
+- **Sorting by time** — `Scheduler.sort_by_time()` orders tasks chronologically by
+  `preferred_time`, with untimed tasks placed last.
+- **Sorting by priority** — `Scheduler.sort_tasks()` orders by priority, then by shortest
+  duration as a tie-break.
+- **Filtering** — `Scheduler.filter_tasks()` filters tasks by completion status and/or pet name
+  (case-insensitive); the two filters compose.
+- **Conflict warnings** — `Scheduler.find_conflicts()` flags tasks pinned to the same
+  `preferred_time` so the UI can warn the user about clashes.
+- **Daily / weekly recurrence** — completing a recurring task (`Task.mark_complete()` →
+  `Task.next_occurrence()`) automatically creates the next pending occurrence on the same pet;
+  one-off tasks do not repeat.
+- **Plain-language plan explanation** — `DailyPlan.explain()` states what was scheduled, when,
+  and what was skipped and why.
+- **Persistent UI state** — `app.py` stores the owner in `st.session_state`, so pets and tasks
+  survive Streamlit's reruns.
+
 ## Getting started
 
 ### Setup
@@ -123,7 +151,7 @@ implemented feature to the method that provides it.
 |---------|-----------|-------|
 | Task sorting | `Scheduler.sort_tasks()`, `Scheduler.sort_by_time()` | `sort_tasks` orders by priority (highest first), then shortest duration as a tie-break; `sort_by_time` orders by each task's `preferred_time` (earliest first) and pushes untimed tasks to the end. |
 | Filtering | `Scheduler.filter_tasks()` | Returns an owner's tasks filtered by completion status (`completed=True/False`) and/or pet name (`pet_name=...`, case-insensitive). Both filters are optional and compose. |
-| Conflict handling | `Scheduler.build_plan()` (via `Scheduler.fits()`) | Tasks are packed back-to-back from the start time, so placed items never overlap — each task starts exactly when the previous one ends. `fits()` enforces the time budget; tasks that no longer fit are recorded in `DailyPlan.skipped` rather than dropped. (Note: fixed `preferred_time` slots are not yet enforced — see Tradeoffs in `reflection.md`.) |
+| Conflict handling | `Scheduler.find_conflicts()`, `Scheduler.build_plan()` (via `Scheduler.fits()`) | `find_conflicts()` flags tasks pinned to the same `preferred_time` so the UI can warn the user. In the plan itself, tasks are packed back-to-back from the start time, so placed items never overlap — each starts when the previous one ends. `fits()` enforces the time budget; tasks that no longer fit are recorded in `DailyPlan.skipped` rather than dropped. (Note: detected `preferred_time` conflicts are surfaced as warnings but not yet auto-resolved in the plan — see Tradeoffs in `reflection.md`.) |
 | Recurring tasks | `Task.next_occurrence()`, `Task.mark_complete()` | Completing a `DAILY` or `WEEKLY` task automatically creates a fresh, pending copy for the next occurrence and adds it to the same pet. One-off tasks (`Recurrence.NONE`) do not repeat. |
 
 The plan itself is assembled by `Scheduler.build_plan()` and explained in plain language by
@@ -131,12 +159,118 @@ The plan itself is assembled by `Scheduler.build_plan()` and explained in plain 
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### Running the app
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+```bash
+streamlit run app.py
+```
+
+### Main UI features and actions
+
+The Streamlit app (`app.py`) is organized top-to-bottom as a single page:
+
+- **Owner & day settings** — set the owner's name, the minutes available today (the time
+  budget), and the preferred start time. These feed the scheduler directly.
+- **Pets** — add a pet (name + species) via a form. Added pets appear immediately in a
+  "Current pets" list.
+- **Tasks** — add a task for a chosen pet with a title, duration, priority, and an optional
+  pinned time ("Pin to a specific time?"). The task list supports:
+  - a **filter** toggle (All / Pending / Completed),
+  - **chronological sorting** of the displayed tasks,
+  - **conflict warnings** when two tasks are pinned to the same time.
+- **Build schedule** — one click generates the day's plan, shown as a clean table with a
+  success summary, a warning listing any skipped tasks, and an expandable "Why this plan?"
+  explanation.
+
+### Example workflow
+
+1. Set **Minutes available today** to, say, `90` and a preferred start of `08:00`.
+2. **Add a pet** — e.g. "Mochi" (dog). It appears under Current pets.
+3. **Add tasks** for Mochi — "Morning walk" (30 min, high), "Feeding" (10 min, high), and
+   "Fetch / enrichment" (25 min, low). Optionally pin Feeding to `08:00`.
+4. Add a second pet ("Luna", cat) and a couple of her tasks to see multi-pet planning.
+5. Use the **filter** to view only Pending tasks; the list is shown **sorted by time**.
+6. If two tasks share a pinned time, a **conflict warning** appears above the table.
+7. Click **Generate schedule** to see today's plan: the highest-priority tasks are placed
+   first, the total time stays within your budget, and anything that didn't fit is listed as
+   skipped.
+
+### Key Scheduler behaviors shown
+
+- **Sorting** — `sort_by_time()` (chronological) for the task list, and `sort_tasks()`
+  (priority, then duration) inside the plan.
+- **Filtering** — `filter_tasks()` powers the All / Pending / Completed toggle.
+- **Conflict warnings** — `find_conflicts()` flags same-time clashes.
+- **Recurrence** — completing a daily/weekly task spawns its next occurrence.
+- **Budget-aware planning + explanation** — `build_plan()` packs within the time budget and
+  `explain()` justifies the result.
+
+### Sample CLI output (`python main.py`)
+
+The demo script exercises the same logic layer from the terminal — adding tasks out of order,
+then sorting, filtering, demonstrating recurrence, and building the schedule:
+
+```
+Jordan is caring for 2 pets with 6 total tasks today.
+
+TASKS AS ENTERED (out of order)
+     18:00  Evening walk (30 min) [medium, pending]
+  any time  Fetch / enrichment (25 min) [low, done]
+     07:00  Morning walk (30 min) [high, pending]
+  any time  Grooming (20 min) [low, pending]
+     08:00  Feeding (10 min) [high, pending]
+  any time  Litter cleanup (15 min) [medium, pending]
+
+SORTED BY TIME (earliest first; untimed last)
+     07:00  Morning walk (30 min) [high, pending]
+     08:00  Feeding (10 min) [high, pending]
+     18:00  Evening walk (30 min) [medium, pending]
+  any time  Litter cleanup (15 min) [medium, pending]
+  any time  Fetch / enrichment (25 min) [low, done]
+  any time  Grooming (20 min) [low, pending]
+
+SORTED BY PRIORITY (highest first, then shortest)
+     08:00  Feeding (10 min) [high, pending]
+     07:00  Morning walk (30 min) [high, pending]
+  any time  Litter cleanup (15 min) [medium, pending]
+     18:00  Evening walk (30 min) [medium, pending]
+  any time  Grooming (20 min) [low, pending]
+  any time  Fetch / enrichment (25 min) [low, done]
+
+FILTER: pending tasks only
+     18:00  Evening walk (30 min) [medium, pending]
+     07:00  Morning walk (30 min) [high, pending]
+  any time  Grooming (20 min) [low, pending]
+     08:00  Feeding (10 min) [high, pending]
+  any time  Litter cleanup (15 min) [medium, pending]
+
+FILTER: completed tasks only
+  any time  Fetch / enrichment (25 min) [low, done]
+
+FILTER: Mochi's tasks only
+     18:00  Evening walk (30 min) [medium, pending]
+  any time  Fetch / enrichment (25 min) [low, done]
+     07:00  Morning walk (30 min) [high, pending]
+
+RECURRENCE: completing a daily task auto-creates the next occurrence
+  Before: Luna has 3 tasks.
+  Marked 'Feeding' (daily) complete ->
+  After:  Luna has 4 tasks.
+     08:00  Feeding (10 min) [high, done]
+     08:00  Feeding (10 min) [high, pending]
+
+====================================================
+TODAY'S SCHEDULE
+====================================================
+Daily plan for 2026-06-23: 4 task(s) scheduled, 85 min total.
+Order: highest priority first, then shortest task, packed from your start time until available time runs out.
+  08:00-08:10  Feeding (10 min) [priority: high]
+  08:10-08:40  Morning walk (30 min) [priority: high]
+  08:40-08:55  Litter cleanup (15 min) [priority: medium]
+  08:55-09:25  Evening walk (30 min) [priority: medium]
+Skipped 1 task(s) - not enough time:
+  - Grooming (20 min) [priority: low]
+====================================================
+```
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
