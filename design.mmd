@@ -17,13 +17,15 @@ classDiagram
     }
 
     class Task {
+        +str id
         +str title
         +int duration_minutes
         +Priority priority
-        +bool recurring
+        +Recurrence recurrence
+        +time preferred_time
         +bool completed
-        +mark_done() None
-        +priority_weight() int
+        +mark_complete() None
+        +next_occurrence() Task
     }
 
     class Priority {
@@ -33,10 +35,15 @@ classDiagram
         HIGH
     }
 
+    class Recurrence {
+        <<enumeration>>
+        NONE
+        DAILY
+        WEEKLY
+    }
+
     class Scheduler {
-        +int available_minutes
-        +time start_time
-        +build_plan(tasks) DailyPlan
+        +build_plan(owner, day) DailyPlan
         +sort_tasks(tasks) List~Task~
         +fits(task, remaining_minutes) bool
     }
@@ -57,8 +64,11 @@ classDiagram
     }
 
     Owner "1" --> "*" Pet : owns
-    Pet "1" --> "*" Task : has
+    Pet "1" o--> "*" Task : has
+    Task --> "1" Pet : belongs to
     Task --> Priority : uses
+    Task --> Recurrence : repeats
+    Scheduler ..> Owner : reads constraints
     Scheduler ..> DailyPlan : builds
     DailyPlan "1" --> "*" ScheduledItem : contains
     ScheduledItem --> Task : wraps
